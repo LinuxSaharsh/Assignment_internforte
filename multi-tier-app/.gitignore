@@ -1,0 +1,11 @@
+
+---
+
+## 🧾 .gitignore 
+
+```gitignore
+*.pem
+*.log
+.aws/
+.idea/
+.vscode/
