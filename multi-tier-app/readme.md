@@ -17,6 +17,6 @@ It includes a VPC with public and private subnets, an EC2 instance in the public
 - Test the connection from EC2 to RDS.
 
 ## 🏗️ Architecture Diagram
-![Screenshot of Homepage](![Screenshot 2025-07-01 170704](https://github.com/user-attachments/assets/325fb316-4331-480f-ab4b-e5e9d7a577d7))
+(![Screenshot 2025-07-01 170704](https://github.com/user-attachments/assets/325fb316-4331-480f-ab4b-e5e9d7a577d7)
 
 
