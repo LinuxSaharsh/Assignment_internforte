@@ -102,6 +102,11 @@ EC2 → CloudWatch Alarm → Lambda Function → SNS Topic → Email Alert
 ---
 
 ## 5️⃣ **Email Alert Received**
+Recive notification for confiorm
+
+![Email Notification](Email_screenshot/email-notification.png)
+
+
 ![Email Alert](Email_screenshot/email-alert.png)
 
 * Screenshot the **actual email** you received from SNS
@@ -139,42 +144,3 @@ stress --cpu 2 --timeout 300
 * Email is sent via SNS
 
 ---
-
-## 📷 Screenshots (Recommended Order)
-
-Place your screenshots in a `/screenshots` folder. Use the following filenames:
-
-1. `sns-topic.png` – SNS Topic & Subscription
-2. `lambda-env-var.png` – Lambda Environment Variable & Permissions
-3. `cloudwatch-alarm.png` – CloudWatch Alarm Setup
-4. `email-alert.png` – Email Alert Received
-5. `lambda-logs.png` (optional) – Lambda execution logs
-
-Example in README:
-
-```markdown
-![SNS Topic](screenshots/sns-topic.png)
-![Lambda Env Variable](screenshots/lambda-env-var.png)
-![CloudWatch Alarm](screenshots/cloudwatch-alarm.png)
-![Email Alert](screenshots/email-alert.png)
-![Lambda Logs](screenshots/lambda-logs.png)
-```
-
----
-
-## 📁 Folder Structure
-
-```
-📦 serverless-monitoring-app
-┣ 📄 README.md
-┣ 📄 lambda_function.py
-┣ 📂 screenshots/
-┃ ┣ sns-topic.png
-┃ ┣ lambda-env-var.png
-┃ ┣ cloudwatch-alarm.png
-┃ ┣ email-alert.png
-┃ ┣ lambda-logs.png (optional)
-```
-
----
-
