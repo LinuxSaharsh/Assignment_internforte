@@ -58,7 +58,11 @@ EC2 → CloudWatch Alarm → Lambda Function → SNS Topic → Email Alert
   * Threshold (`>= 60%`)
   * Actions → Lambda function trigger
 * Purpose: Shows the alarm is correctly monitoring CPU and linked to Lambda
-![alt text](<Screenshot 2025-09-08 134244.png>)
+![alt text](<CloudWatch_screenshot/CloudWatch-Overviwe.png>)
+
+![alt text](<CloudWatch_screenshot/CloudWatch-Deatail.png>)
+
+![alt text](CloudWatch_screenshot/CloudWatch-Graph.png)
 ---
 
 ## 2️⃣ Lambda Environment Variable
@@ -69,6 +73,7 @@ EC2 → CloudWatch Alarm → Lambda Function → SNS Topic → Email Alert
   * Key: `SNS_TOPIC_ARN`
   * Value: (masked or example ARN)
 * Purpose: Shows Lambda can read the SNS topic ARN dynamically
+![alt text](<Lambda_screenshot/Lamda-code.png>)
 
 ---
 
@@ -81,13 +86,14 @@ EC2 → CloudWatch Alarm → Lambda Function → SNS Topic → Email Alert
   * Subscriptions
   * Status = Confirmed
 * Purpose: Shows SNS is ready to send email notifications
-![alt text](<Screenshot 2025-09-08 134212.png>)
+![alt text](<SNS_screenshot/SNS-subscribe.png>)
 ---
 
 ## 4️⃣ **Lambda Function Configuration / Permissions**
 
 * Go to "Lambda → Your Function → Permissions / Execution Role"
 * Screenshot should show:
+![alt text](<Lambda_screenshot/Lamda-Function.png>)
 
   * Execution role name
   * Attached policy (AmazonSNSFullAccess or custom policy with `sns:Publish`)
