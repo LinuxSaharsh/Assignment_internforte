@@ -96,7 +96,7 @@ EC2 → CloudWatch Alarm → Lambda Function → SNS Topic → Email Alert
 ---
 
 ## 5️⃣ **Email Alert Received**
-![alt text](<Assignment/3. Serverless monitoring App/Email_screenshot/Screenshot 2025-09-08 134419.png>)
+![alt text](3. Serverless monitoring App/Email_screenshot/Screenshot 2025-09-08 134419.png)
 
 * Screenshot the **actual email** you received from SNS
 
