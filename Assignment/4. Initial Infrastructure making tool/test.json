@@ -1,0 +1,354 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Initial infrastructure setup: IAM User, EC2 Role, S3, VPC (2 Public Subnets), and EC2 instance with an S3 upload test via UserData.",
+  "Parameters": {
+    "AMIId": {
+      "Type": "AWS::EC2::Image::Id", 
+      "Default": "ami-0341d95f75f311023", 
+      "Description": "The specific AMI ID to use for the EC2 instance."
+    },
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access."
+    }
+  },
+  "Resources": {
+    "MyAppBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "${AWS::StackName}-app-bucket-${AWS::Region}-${AWS::AccountId}"
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        }
+      }
+    },
+    "AdminUser": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "UserName": {
+          "Fn::Sub": "${AWS::StackName}-admin-user"
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AdministratorAccess"
+        ]
+      }
+    },
+    "EC2S3AccessRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "${AWS::StackName}-ec2-s3-role"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Sub": "${AWS::StackName}-ec2-s3-policy"
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:PutObject",
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::GetAtt": [
+                        "MyAppBucket",
+                        "Arn"
+                      ]
+                    },
+                    {
+                      "Fn::Sub": "${MyAppBucket.Arn}/*"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "EC2InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "InstanceProfileName": {
+          "Fn::Sub": "${AWS::StackName}-instance-profile"
+        },
+        "Roles": [
+          {
+            "Ref": "EC2S3AccessRole"
+          }
+        ]
+      }
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-vpc"
+            }
+          }
+        ]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-igw"
+            }
+          }
+        ]
+      }
+    },
+    "VPCGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-public-rt"
+            }
+          }
+        ]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "VPCGatewayAttachment",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-pubsub-1"
+            }
+          }
+        ]
+      }
+    },
+    "PublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "CidrBlock": "10.0.2.0/24",
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-pubsub-2"
+            }
+          }
+        ]
+      }
+    },
+    "Subnet1RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnet1"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "Subnet2RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnet2"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "InstanceSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow SSH and HTTP",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "AppInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t3.micro",
+        "ImageId": {
+          "Ref": "AMIId"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": true,
+            "DeviceIndex": "0",
+            "SubnetId": {
+              "Ref": "PublicSubnet1"
+            },
+            "GroupSet": [
+              {
+                "Ref": "InstanceSecurityGroup"
+              }
+            ]
+          }
+        ],
+        "IamInstanceProfile": {
+          "Ref": "EC2InstanceProfile"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-app-instance"
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/bin/bash -xe\nyum update -y\n\n# Create test file in the /tmp directory to avoid permission issues\necho \"CloudFormation test file from EC2 instance\" > /tmp/testfile.txt\n\n# Upload using the resolved bucket name\naws s3 cp /tmp/testfile.txt s3://${MyAppBucket}/testfile.txt"
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "BucketName": {
+      "Description": "Name of the created S3 bucket",
+      "Value": {
+        "Ref": "MyAppBucket"
+      }
+    },
+    "AdminUserName": {
+      "Description": "IAM user created for admin tasks",
+      "Value": {
+        "Ref": "AdminUser"
+      }
+    },
+    "EC2InstanceId": {
+      "Description": "EC2 Instance Id",
+      "Value": {
+        "Ref": "AppInstance"
+      }
+    },
+    "InstancePublicIp": {
+      "Description": "Public IP of the EC2 instance",
+      "Value": {
+        "Fn::GetAtt": [
+          "AppInstance",
+          "PublicIp"
+        ]
+      }
+    },
+    "SSHCommand": {
+      "Description": "Example SSH command to access the instance (replace path if needed)",
+      "Value": {
+        "Fn::Sub": "ssh -i <path-to-${KeyName}.pem> ec2-user@${AppInstance.PublicIp}"
+      }
+    }
+  }
+}
