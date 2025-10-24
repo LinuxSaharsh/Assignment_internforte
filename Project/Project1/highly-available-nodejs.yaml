@@ -1,0 +1,262 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Highly Available Node.js Application Stack using VPC, ALB, ASG, and EC2.
+
+Parameters:
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances.
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  InstanceType:
+    Description: EC2 instance type for the application servers.
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  NodejsPort:
+    Description: The port the Node.js application runs on inside the EC2 instance.
+    Type: Number
+    Default: 3000
+
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: 10.0.0.0/16
+    Public:
+      CIDR: 10.0.0.0/24
+    Private1:
+      CIDR: 10.0.1.0/24
+    Private2:
+      CIDR: 10.0.2.0/24
+
+Resources:
+
+  ## 1. VPC and Networking Resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [SubnetConfig, VPC, CIDR]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: NodejsAppVPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: NodejsAppIGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap [SubnetConfig, Public, CIDR]
+      AvailabilityZone: !Select [0, !GetAZs ''] # AZ 1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: NodejsAppPublicSubnet1
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap [SubnetConfig, Private1, CIDR]
+      AvailabilityZone: !Select [0, !GetAZs ''] # AZ 1
+      Tags:
+        - Key: Name
+          Value: NodejsAppPrivateSubnet1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap [SubnetConfig, Private2, CIDR]
+      AvailabilityZone: !Select [1, !GetAZs ''] # AZ 2
+      Tags:
+        - Key: Name
+          Value: NodejsAppPrivateSubnet2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: NodejsAppPublicRT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  ## 2. Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Security group for the ALB
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: NodejsAppALBSG
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Security group for the EC2 instances
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref NodejsPort
+          ToPort: !Ref NodejsPort
+          SourceSecurityGroupId: !GetAtt ALBSecurityGroup.GroupId # Allow traffic only from ALB
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Allow SSH from anywhere (restrict this in production!)
+      Tags:
+        - Key: Name
+          Value: NodejsAppEC2SG
+
+  ## 3. EC2 and Auto Scaling Resources
+  IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore # Allows use of Systems Manager for troubleshooting/management
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref IAMRole
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        SecurityGroupIds:
+          - !GetAtt EC2SecurityGroup.GroupId
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        UserData: !Base64 |
+          #!/bin/bash
+          # Install Node.js
+          yum update -y
+          yum install -y nodejs npm git
+
+          # Clone and deploy Node.js application
+          git clone https://github.com/johnpapa/node-hello.git /home/ec2-user/node-hello
+          cd /home/ec2-user/node-hello
+          npm install
+
+          # Run the application with a process manager (PM2 is common, but simpler for this example)
+          # Note: The 'start' script in package.json uses port 3000
+          # We'll run it directly for simplicity here, expecting the ASG health check to handle failures.
+          /usr/bin/node server.js > /dev/null 2>&1 &
+
+          # Wait for the app to be ready before ASG health check.
+          # In a production setup, use a proper init system (e.g., systemd unit, PM2, or CodeDeploy).
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      Port: !Ref NodejsPort
+      Protocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.DefaultVersionNumber
+      MinSize: '2' # Minimum of 2 instances for High Availability
+      MaxSize: '4'
+      DesiredCapacity: '2'
+      TargetGroupARNs:
+        - !Ref TargetGroup
+
+  ## 4. Application Load Balancer
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicSubnet
+        - !Ref PrivateSubnet2 # Note: ALB can use Public subnets for internet-facing
+      SecurityGroups:
+        - !GetAtt ALBSecurityGroup.GroupId
+      Scheme: internet-facing
+      Tags:
+        - Key: Name
+          Value: NodejsAppALB
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+  ALBDNSName:
+    Description: The DNS name of the Application Load Balancer
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: NodejsAppALBDNS
